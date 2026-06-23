@@ -1,13 +1,13 @@
 # Smart Road Vehicle Analytics — runtime configuration
 
 # Video input: 0 for webcam, an RTSP/RTMP URL, or a file path.
-source: "data/sample.mp4"
-output_path: "output/annotated.mp4"
-process_every_n: 1          # process every Nth frame (raise to trade accuracy for speed)
+source: "traffic.mp4"          # <-- Humnen "data/sample.mp4" se badal kar direct file ka naam kar diya
+output_path: "annotated.mp4"
+process_every_n: 2            # <-- Isko 2 kar diya taaki laptop par video phase bina lag ke smooth chale
 
 detector:
-  model: "models/yolov8n.pt"
-  conf: 0.35                # detection confidence threshold
+  model: "yolov8n.pt"         # <-- "models/" hata diya, ab yeh direct root se model uthayega
+  conf: 0.35
   iou: 0.5
   tracker: "bytetrack.yaml" # Ultralytics built-in ByteTrack config
   device: ""                # "" = auto, "cpu", or "0" for first GPU
