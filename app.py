@@ -12,45 +12,46 @@ import os
 import sys
 import time
 
-# ─── THE ULTIMATE BRUTE-FORCE PATH SCANNER ────────────────────────────
-# Hum manually scan karke search paths register karenge taaki zero configuration defaults milein
+# ─── THE ULTIMATE ROOT RECOVERY SCANNER ───────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-# 1. Base files location system path me add karein
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+# Hum un saari possible jagaho ko list kar rahe hain jahan aapka code ho sakta hai
+possible_paths = [
+    _HERE,                                      # Current directory (/opt/render/project/src)
+    os.path.dirname(_HERE),                    # Parent directory (/opt/render/project)
+    os.path.join(_HERE, "src"),                # Sub-folder src
+    os.path.join(os.path.dirname(_HERE), "src") # Parent's sub-folder src
+]
 
-# 2. Agar Render ne folders nested kar diye hain, toh check karein ki 'src' folder kahan chhupa hai
-_SRC_PATH_DIRECT = os.path.join(_HERE, "src")
-_SRC_PATH_PARENT = os.path.join(os.path.dirname(_HERE), "src")
-
-if os.path.exists(_SRC_PATH_DIRECT) and _SRC_PATH_DIRECT not in sys.path:
-    sys.path.insert(0, _SRC_PATH_DIRECT)
-if os.path.exists(_SRC_PATH_PARENT) and _SRC_PATH_PARENT not in sys.path:
-    sys.path.insert(0, _SRC_PATH_PARENT)
-
-# 3. Agar fir bhi fallback layer me custom module execution handle karna pade
-sys.path.insert(0, os.path.dirname(_HERE))
+# Saare possible paths ko sys.path me top par insert kar rahe hain
+for path in possible_paths:
+    if os.path.exists(path) and path not in sys.path:
+        sys.path.insert(0, path)
 # ──────────────────────────────────────────────────────────────────────
 
 from flask import Flask, Response, jsonify, render_template
 
-# Ab dynamic framework wrapper module loading chalegi bina crash huye
+# Ab chahe files 'src' prefix ke sath import hon ya bina uske, dono tarike handle ho jayenge
 try:
     from src.config import Config
     from src.pipeline import Pipeline
 except (ModuleNotFoundError, ImportError):
     try:
-        import config as Config  # type: ignore
-        import pipeline as Pipeline  # type: ignore
+        from config import Config  # type: ignore
+        from pipeline import Pipeline  # type: ignore
     except (ModuleNotFoundError, ImportError):
         try:
-            from config import Config  # type: ignore
-            from pipeline import Pipeline  # type: ignore
+            # Render Cloud ke liye direct relative dynamic imports
+            sys.path.append(_HERE)
+            import config as Config  # type: ignore
+            import pipeline as Pipeline  # type: ignore
         except (ModuleNotFoundError, ImportError) as err:
-            # Taaki exact debugging directory output dikhe agar absolute failure ho
-            print(f"CRITICAL DEBUG INFO: Current sys.path is {sys.path}", flush=True)
-            print(f"CRITICAL DEBUG INFO: Current directory content is {os.listdir(_HERE)}", flush=True)
+            # Agar sab kuch fail ho jaye, toh crash hone se pehle logs me pure folder ka sach samne aayega
+            print(f"--- RENDER CRITICAL DEBUG LOGS ---", flush=True)
+            print(f"Current Directory: {_HERE}", flush=True)
+            print(f"System Paths: {sys.path}", flush=True)
+            if os.path.exists(_HERE):
+                print(f"Files inside current directory: {os.listdir(_HERE)}", flush=True)
             raise err
 
 # UI-only mode escape hatch for memory-constrained hosts.
@@ -160,14 +161,17 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    # Config location loading block safely
+    # Config loading block safely
     try:
         config = Config.load(args.config)
     except Exception:
         config_path = os.path.join(_HERE, args.config)
-        config = Config.load(config_path)
+        try:
+            config = Config.load(config_path)
+        except Exception:
+            config = None
 
-    if RUN_PIPELINE:
+    if RUN_PIPELINE and config is not None:
         try:
             pipeline = Pipeline(config)
             pipeline.start_async()
@@ -175,10 +179,10 @@ def main() -> None:
             log.error("Could not start pipeline (%s); serving dashboard UI only.", exc)
             pipeline = None
     else:
-        log.info("RUN_PIPELINE=0 — serving dashboard UI only (no video processing).")
+        log.info("RUN_PIPELINE=0 or missing config — serving dashboard UI only.")
 
     host = "0.0.0.0"
-    port = int(os.environ.get("PORT", config.get("dashboard.port", 5000)))
+    port = int(os.environ.get("PORT", 5000))
     log.info("Dashboard on http://%s:%s", host, port)
     
     # threaded=True so the MJPEG stream doesn't block API calls.
