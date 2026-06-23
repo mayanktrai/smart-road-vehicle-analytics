@@ -1,10 +1,10 @@
+from __future__ import annotations
+
 """Flask dashboard + live processing.
 
 Starts the analytics pipeline in a background thread, streams the annotated frames
 as MJPEG, and serves JSON endpoints that the dashboard polls for charts and tables.
 """
-"""Flask dashboard + live processing."""
-from __future__ import annotations
 
 import argparse
 import logging
@@ -13,7 +13,6 @@ import os
 import sys
 
 # ─── RENDER PLATFORM PATH FIX ─────────────────────────────────────────
-# Yeh current working directory aur uske upar ke folder dono ko path me jod dega
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 
@@ -25,7 +24,6 @@ if parent_dir not in sys.path:
 
 from flask import Flask, Response, jsonify, render_template
 
-# Agar abhi bhi "src" na mile, toh hum directly fallback imports use kar sakte hain
 try:
     from src.config import Config
     from src.pipeline import Pipeline
@@ -121,8 +119,6 @@ def main() -> None:
     pipeline = Pipeline(config)
     pipeline.start_async()
 
-    # Cloud Deployment ke liye Host aur Port updates
-    # Streamlit/Render ya baaki cloud platforms PORT environment variable use karte hain
     host = "0.0.0.0"
     port = int(os.environ.get("PORT", config.get("dashboard.port", 5000)))
     
