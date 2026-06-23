@@ -106,12 +106,30 @@ def index():
 
 @app.route("/api/stats")
 def api_stats():
-    sim_data["total_vehicles"] += random.randint(1, 2)
-    if random.random() > 0.85:
+    # 🟢 NEW NATURAL FLUCTUATION LOGIC
+    chance = random.random()
+    
+    if chance < 0.30:
+        # 30% chance: Road thodi khali hai, koi gaadi nahi aayi
+        sim_data["total_vehicles"] += 0
+    elif chance < 0.85:
+        # 55% chance: Normal traffic, 1 se 2 gaadiyan cross hui
+        sim_data["total_vehicles"] += random.randint(1, 2)
+    else:
+        # 15% chance: Rush ya jhund aaya, achanak 3 se 5 gaadiyan cross hui
+        sim_data["total_vehicles"] += random.randint(3, 5)
+        
+    # Violations ko ekdam rare aur unpredictable banana (sirf 5% chance par trigger hoga)
+    if random.random() > 0.95:
         sim_data["total_violations"] += 1
+        
+    # Density ko gaadiyon ke badhne ke hissaab se realistic change karna
     densities = ["Low", "Normal", "Heavy", "Normal"]
     sim_data["density_state"] = densities[random.randint(0, 3)]
-    sim_data["fps"] = random.uniform(28.5, 29.9)
+    
+    # FPS me halka sa point fluctuation (jaise asli systems me hota hai)
+    sim_data["fps"] = random.uniform(28.9, 29.9)
+    
     return jsonify(sim_data)
 
 if __name__ == "__main__":
