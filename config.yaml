@@ -1,0 +1,66 @@
+# Smart Road Vehicle Analytics — runtime configuration
+
+# Video input: 0 for webcam, an RTSP/RTMP URL, or a file path.
+source: "data/sample.mp4"
+output_path: "output/annotated.mp4"
+process_every_n: 1          # process every Nth frame (raise to trade accuracy for speed)
+
+detector:
+  model: "models/yolov8n.pt"
+  conf: 0.35                # detection confidence threshold
+  iou: 0.5
+  tracker: "bytetrack.yaml" # Ultralytics built-in ByteTrack config
+  device: ""                # "" = auto, "cpu", or "0" for first GPU
+  # COCO class id -> internal category (slide 4: Detect & Classify)
+  class_map:
+    2: { name: car,        category: "LMV" }
+    5: { name: bus,        category: "HMV" }
+    7: { name: truck,      category: "HMV" }
+    3: { name: motorcycle, category: "Two-Wheeler" }
+    1: { name: bicycle,    category: "Two-Wheeler" }
+
+# Virtual counting line (pixel coords). Vehicles are counted when their centroid
+# crosses this segment. Direction sign distinguishes the two flows.
+counter:
+  line: [[40, 250], [728, 250]]   # calibrated for the 768x432 data/sample.mp4
+
+# Speed measurement zone. The four image_points (a quad on the road in the frame)
+# map to a rectangle of real size zone_length_m (along travel) x zone_width_m.
+speed:
+  enabled: true
+  speed_limit_kmph: 60
+  zone_length_m: 20.0       # real distance covered by the calibrated zone (metres)
+  zone_width_m: 7.0
+  image_points:             # TL, TR, BR, BL of the calibration quad (pixels)
+    - [300, 200]             # uncalibrated for sample.mp4 — within-frame placeholder
+    - [468, 200]
+    - [728, 420]
+    - [40, 420]
+  min_track_points: 4       # samples required before a speed is emitted
+  smoothing: 3              # moving-average window over per-step speeds
+
+# Congestion classification (slide 13): occupancy = vehicle box area / ROI area.
+density:
+  roi: [[40, 150], [728, 150], [728, 420], [40, 420]]   # calibrated for sample.mp4
+  low_max: 0.15             # <= low_max  -> Low
+  high_min: 0.35            # >= high_min -> High ; between -> Medium
+
+anpr:
+  enabled: false            # disabled: requires Tesseract OCR (not installed)
+  plate_model: ""           # optional path to a plate-detection YOLO model
+  tesseract_cmd: ""         # set on Windows, e.g. C:/Program Files/Tesseract-OCR/tesseract.exe
+  min_confidence: 0.40
+  plate_regex: "^[A-Z0-9]{4,12}$"
+
+database:
+  enabled: false            # disabled: requires a running MySQL server
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "root"
+  database: "road_analytics"
+
+dashboard:
+  host: "127.0.0.1"
+  port: 5000
+  refresh_seconds: 5
