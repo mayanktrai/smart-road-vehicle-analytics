@@ -4,6 +4,12 @@ from __future__ import annotations
 
 Starts the analytics pipeline in a background thread, streams the annotated frames
 as MJPEG, and serves JSON endpoints that the dashboard polls for charts and tables.
+
+Deployment notes:
+  * Binds 0.0.0.0 on $PORT (required by hosts like Render/Railway/Heroku).
+  * Set RUN_PIPELINE=0 to serve only the dashboard UI without loading YOLO/torch —
+    useful on small/free tiers that can't fit the model in memory. Flip it to 1
+    (or leave it unset) on a box with enough RAM to do live processing.
 """
 
 import argparse
@@ -12,55 +18,35 @@ import os
 import sys
 import time
 
-# ─── THE ULTIMATE ROOT RECOVERY SCANNER ───────────────────────────────
+# ─── PATH MANAGEMENT FOR LOCAL & RENDER CLOUD ───────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
-# Hum un saari possible jagaho ko list kar rahe hain jahan aapka code ho sakta hai
-possible_paths = [
-    _HERE,                                      # Current directory (/opt/render/project/src)
-    os.path.dirname(_HERE),                    # Parent directory (/opt/render/project)
-    os.path.join(_HERE, "src"),                # Sub-folder src
-    os.path.join(os.path.dirname(_HERE), "src") # Parent's sub-folder src
-]
-
-# Saare possible paths ko sys.path me top par insert kar rahe hain
-for path in possible_paths:
-    if os.path.exists(path) and path not in sys.path:
-        sys.path.insert(0, path)
-# ──────────────────────────────────────────────────────────────────────
+# Add parent just in case Render treats 'src' weirdly
+_PARENT = os.path.dirname(_HERE)
+if _PARENT not in sys.path:
+    sys.path.insert(0, _PARENT)
+# ───────────────────────────────────────────────────────────────────
 
 from flask import Flask, Response, jsonify, render_template
 
-# Ab chahe files 'src' prefix ke sath import hon ya bina uske, dono tarike handle ho jayenge
+# Har layout ke liye flexible imports (Local vs Render Cloud)
 try:
     from src.config import Config
     from src.pipeline import Pipeline
 except (ModuleNotFoundError, ImportError):
-    try:
-        from config import Config  # type: ignore
-        from pipeline import Pipeline  # type: ignore
-    except (ModuleNotFoundError, ImportError):
-        try:
-            # Render Cloud ke liye direct relative dynamic imports
-            sys.path.append(_HERE)
-            import config as Config  # type: ignore
-            import pipeline as Pipeline  # type: ignore
-        except (ModuleNotFoundError, ImportError) as err:
-            # Agar sab kuch fail ho jaye, toh crash hone se pehle logs me pure folder ka sach samne aayega
-            print(f"--- RENDER CRITICAL DEBUG LOGS ---", flush=True)
-            print(f"Current Directory: {_HERE}", flush=True)
-            print(f"System Paths: {sys.path}", flush=True)
-            if os.path.exists(_HERE):
-                print(f"Files inside current directory: {os.listdir(_HERE)}", flush=True)
-            raise err
+    import config as Config  # type: ignore
+    import pipeline as Pipeline  # type: ignore
 
 # UI-only mode escape hatch for memory-constrained hosts.
 RUN_PIPELINE = os.environ.get("RUN_PIPELINE", "1") != "0"
 
+# FIXED: Added absolute paths for dashboard templates and static files to fix TemplateNotFound
 app = Flask(
     __name__,
-    template_folder="dashboard/templates",
-    static_folder="dashboard/static",
+    template_folder=os.path.join(_HERE, "dashboard", "templates"),
+    static_folder=os.path.join(_HERE, "dashboard", "static"),
 )
 log = logging.getLogger("app")
 
@@ -166,12 +152,9 @@ def main() -> None:
         config = Config.load(args.config)
     except Exception:
         config_path = os.path.join(_HERE, args.config)
-        try:
-            config = Config.load(config_path)
-        except Exception:
-            config = None
+        config = Config.load(config_path)
 
-    if RUN_PIPELINE and config is not None:
+    if RUN_PIPELINE:
         try:
             pipeline = Pipeline(config)
             pipeline.start_async()
@@ -179,7 +162,7 @@ def main() -> None:
             log.error("Could not start pipeline (%s); serving dashboard UI only.", exc)
             pipeline = None
     else:
-        log.info("RUN_PIPELINE=0 or missing config — serving dashboard UI only.")
+        log.info("RUN_PIPELINE=0 — serving dashboard UI only (no video processing).")
 
     host = "0.0.0.0"
     port = int(os.environ.get("PORT", 5000))
