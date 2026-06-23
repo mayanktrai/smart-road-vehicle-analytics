@@ -4,12 +4,6 @@ from __future__ import annotations
 
 Starts the analytics pipeline in a background thread, streams the annotated frames
 as MJPEG, and serves JSON endpoints that the dashboard polls for charts and tables.
-
-Deployment notes:
-  * Binds 0.0.0.0 on $PORT (required by hosts like Render/Railway/Heroku).
-  * Set RUN_PIPELINE=0 to serve only the dashboard UI without loading YOLO/torch —
-    useful on small/free tiers that can't fit the model in memory. Flip it to 1
-    (or leave it unset) on a box with enough RAM to do live processing.
 """
 
 import argparse
@@ -18,20 +12,33 @@ import os
 import sys
 import time
 
-# ─── PATH MANAGEMENT ──────────────────────────────────────────────────
-# Make the repo root (which contains the `src/` package) importable no matter how
-# the platform launches this file. We deliberately do NOT add the parent directory:
-# hosts like Render check the project out into a folder literally named `src`, and
-# adding its parent makes `import src` resolve to that host folder instead of our
-# actual package — which is exactly the ModuleNotFoundError this used to throw.
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+# ─── THE ULTIMATE RENDER PATH FIX ─────────────────────────────────────
+# Hum current running file (app.py) ki directory nikaal rahe hain
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Agar hum Render par hain, toh hum is directory ko sys.path me sabse top (index 0) par daalenge
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+# Agar server '/opt/render/project/src' ke andar chal raha hai, toh 'src' ke andar ki files
+# direct bina root folder prefix ke import ho sakein, iske liye fallback strategy lagayi hai.
+# ──────────────────────────────────────────────────────────────────────
 
 from flask import Flask, Response, jsonify, render_template
 
-from src.config import Config
-from src.pipeline import Pipeline
+# Yahan hum dynamically try karenge dono tarike se import karna
+try:
+    from src.config import Config
+    from src.pipeline import Pipeline
+except (ModuleNotFoundError, ImportError):
+    # Render cloud ke liye fallback jab 'src' folder khud hi root directory ban jaye
+    try:
+        import config as Config  # type: ignore
+        import pipeline as Pipeline  # type: ignore
+    except (ModuleNotFoundError, ImportError):
+        # Ek aur aakhri backup
+        from config import Config # type: ignore
+        from pipeline import Pipeline # type: ignore
 
 # UI-only mode escape hatch for memory-constrained hosts.
 RUN_PIPELINE = os.environ.get("RUN_PIPELINE", "1") != "0"
@@ -140,7 +147,13 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    config = Config.load(args.config)
+    # Config loading block safely
+    try:
+        config = Config.load(args.config)
+    except Exception:
+        # Agar default location par na mile toh absolute path handling
+        config_path = os.path.join(_CURRENT_DIR, args.config)
+        config = Config.load(config_path)
 
     if RUN_PIPELINE:
         try:
