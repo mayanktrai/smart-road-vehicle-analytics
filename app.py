@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Flask dashboard + live processing.
 
 Starts the analytics pipeline in a background thread, streams the annotated frames
@@ -9,7 +11,6 @@ Deployment notes:
     useful on small/free tiers that can't fit the model in memory. Flip it to 1
     (or leave it unset) on a box with enough RAM to do live processing.
 """
-from __future__ import annotations
 
 import argparse
 import logging
@@ -17,6 +18,7 @@ import os
 import sys
 import time
 
+# ─── PATH MANAGEMENT ──────────────────────────────────────────────────
 # Make the repo root (which contains the `src/` package) importable no matter how
 # the platform launches this file. We deliberately do NOT add the parent directory:
 # hosts like Render check the project out into a folder literally named `src`, and
@@ -41,8 +43,8 @@ app = Flask(
 )
 log = logging.getLogger("app")
 
-pipeline: "Pipeline | None" = None
-config: "Config | None" = None
+pipeline: Pipeline | None = None
+config: Config | None = None
 
 
 def _mjpeg_generator():
@@ -71,8 +73,8 @@ def _mjpeg_generator():
 def index():
     return render_template(
         "index.html",
-        refresh_seconds=int(config.get("dashboard.refresh_seconds", 5)),
-        speed_limit=config.get("speed.speed_limit_kmph", 60),
+        refresh_seconds=int(config.get("dashboard.refresh_seconds", 5)) if config else 5,
+        speed_limit=config.get("speed.speed_limit_kmph", 60) if config else 60,
     )
 
 
@@ -153,6 +155,7 @@ def main() -> None:
     host = "0.0.0.0"
     port = int(os.environ.get("PORT", config.get("dashboard.port", 5000)))
     log.info("Dashboard on http://%s:%s", host, port)
+    
     # threaded=True so the MJPEG stream doesn't block API calls.
     app.run(host=host, port=port, threaded=True, debug=False)
 
