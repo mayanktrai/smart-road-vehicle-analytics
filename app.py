@@ -2,19 +2,21 @@
 
 Starts the analytics pipeline in a background thread, streams the annotated frames
 as MJPEG, and serves JSON endpoints that the dashboard polls for charts and tables.
-
-Usage:
-    python app.py --config config.yaml
-    # then open http://127.0.0.1:5000
 """
 from __future__ import annotations
 
 import argparse
 import logging
 import time
+import os
+import sys
+
+# IMPORTANT FIX: Python ko 'src' folder ka rasta batane ke liye path injection
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
 from flask import Flask, Response, jsonify, render_template
-
 from src.config import Config
 from src.pipeline import Pipeline
 
@@ -106,10 +108,12 @@ def main() -> None:
     pipeline = Pipeline(config)
     pipeline.start_async()
 
-    host = config.get("dashboard.host", "127.0.0.1")
-    port = int(config.get("dashboard.port", 5000))
+    # Cloud Deployment ke liye Host aur Port updates
+    # Streamlit/Render ya baaki cloud platforms PORT environment variable use karte hain
+    host = "0.0.0.0"
+    port = int(os.environ.get("PORT", config.get("dashboard.port", 5000)))
+    
     log.info("Dashboard on http://%s:%s", host, port)
-    # threaded=True so the MJPEG stream doesn't block API calls.
     app.run(host=host, port=port, threaded=True, debug=False)
 
 
