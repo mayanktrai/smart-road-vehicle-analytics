@@ -9,3 +9,8 @@ data/*.mp4
 venv/
 *.log
 .DS_Store
+.pytest_cache/
+
+# Keep the small demo assets so the deployed app has something to process.
+!data/sample.mp4
+!models/yolov8n.pt

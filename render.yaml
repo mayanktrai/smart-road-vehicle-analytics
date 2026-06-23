@@ -1,0 +1,17 @@
+# Render Blueprint. Commit this and use "New + > Blueprint" on render.com, or just
+# mirror these settings in a manually-created Web Service.
+services:
+  - type: web
+    name: smart-road-vehicle-analytics
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # Start in UI-only mode so the first deploy is guaranteed to boot within the
+      # free tier's 512 MB. Once you move to an instance with >=1 GB RAM, set this
+      # to "1" (or delete it) to enable live YOLO video processing.
+      - key: RUN_PIPELINE
+        value: "0"

@@ -1,44 +1,38 @@
-from __future__ import annotations
+"""Flask dashboard + live processing.
 
-"""Flask dashboard + live processing."""
+Starts the analytics pipeline in a background thread, streams the annotated frames
+as MJPEG, and serves JSON endpoints that the dashboard polls for charts and tables.
+
+Deployment notes:
+  * Binds 0.0.0.0 on $PORT (required by hosts like Render/Railway/Heroku).
+  * Set RUN_PIPELINE=0 to serve only the dashboard UI without loading YOLO/torch —
+    useful on small/free tiers that can't fit the model in memory. Flip it to 1
+    (or leave it unset) on a box with enough RAM to do live processing.
+"""
+from __future__ import annotations
 
 import argparse
 import logging
-import time
 import os
 import sys
-from pathlib import Path
+import time
 
-# ─── RENDER PLATFORM PATH FIX (COMPLETE INJECTION) ────────────────────
-# Yeh automatically script ke location aur uske parent directories ko add karega
-script_dir = Path(__file__).resolve().parent
-root_dir = script_dir.parent
-
-if str(script_dir) not in sys.path:
-    sys.path.insert(0, str(script_dir))
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
-
-# Extra insurance: Agar Render 'src' folder ko nahi dekh pa raha hai
-src_dir = script_dir / "src"
-if src_dir.exists() and str(src_dir) not in sys.path:
-    sys.path.insert(0, str(src_dir))
-# ──────────────────────────────────────────────────────────────────────
+# Make the repo root (which contains the `src/` package) importable no matter how
+# the platform launches this file. We deliberately do NOT add the parent directory:
+# hosts like Render check the project out into a folder literally named `src`, and
+# adding its parent makes `import src` resolve to that host folder instead of our
+# actual package — which is exactly the ModuleNotFoundError this used to throw.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 from flask import Flask, Response, jsonify, render_template
 
-# Har tarah ke folder layout ke liye fallback mechanisms
-try:
-    from src.config import Config
-    from src.pipeline import Pipeline
-except (ModuleNotFoundError, ImportError):
-    try:
-        from config import Config
-        from pipeline import Pipeline
-    except (ModuleNotFoundError, ImportError):
-        # Agar absolute fail ho jaye toh system path standard import try karein
-        import config as Config  # type: ignore
-        import pipeline as Pipeline  # type: ignore
+from src.config import Config
+from src.pipeline import Pipeline
+
+# UI-only mode escape hatch for memory-constrained hosts.
+RUN_PIPELINE = os.environ.get("RUN_PIPELINE", "1") != "0"
 
 app = Flask(
     __name__,
@@ -47,8 +41,8 @@ app = Flask(
 )
 log = logging.getLogger("app")
 
-pipeline: Pipeline = None  # type: ignore
-config: Config = None      # type: ignore
+pipeline: "Pipeline | None" = None
+config: "Config | None" = None
 
 
 def _mjpeg_generator():
@@ -56,7 +50,7 @@ def _mjpeg_generator():
 
     blank_sent = False
     while True:
-        frame = pipeline.get_latest_frame()
+        frame = pipeline.get_latest_frame() if pipeline is not None else None
         if frame is None:
             if not blank_sent:
                 time.sleep(0.1)
@@ -84,6 +78,12 @@ def index():
 
 @app.route("/video_feed")
 def video_feed():
+    if pipeline is None:
+        return Response(
+            "Live processing is disabled (RUN_PIPELINE=0).",
+            status=503,
+            mimetype="text/plain",
+        )
     return Response(
         _mjpeg_generator(),
         mimetype="multipart/x-mixed-replace; boundary=frame",
@@ -92,6 +92,20 @@ def video_feed():
 
 @app.route("/api/stats")
 def api_stats():
+    if pipeline is None:
+        return jsonify(
+            {
+                "count_up": 0,
+                "count_down": 0,
+                "total": 0,
+                "density_state": "-",
+                "occupancy": 0.0,
+                "fps": 0.0,
+                "total_vehicles": 0,
+                "total_violations": 0,
+                "total_plates": 0,
+            }
+        )
     live = pipeline.get_stats()
     summary = pipeline.db.summary()
     return jsonify({**live, **summary})
@@ -99,17 +113,17 @@ def api_stats():
 
 @app.route("/api/categories")
 def api_categories():
-    return jsonify(pipeline.db.counts_by_category())
+    return jsonify(pipeline.db.counts_by_category() if pipeline is not None else {})
 
 
 @app.route("/api/hourly")
 def api_hourly():
-    return jsonify(pipeline.db.hourly_counts(hours=24))
+    return jsonify(pipeline.db.hourly_counts(hours=24) if pipeline is not None else [])
 
 
 @app.route("/api/violations")
 def api_violations():
-    return jsonify(pipeline.db.recent_violations(limit=20))
+    return jsonify(pipeline.db.recent_violations(limit=20) if pipeline is not None else [])
 
 
 def main() -> None:
@@ -125,13 +139,21 @@ def main() -> None:
     )
 
     config = Config.load(args.config)
-    pipeline = Pipeline(config)
-    pipeline.start_async()
+
+    if RUN_PIPELINE:
+        try:
+            pipeline = Pipeline(config)
+            pipeline.start_async()
+        except Exception as exc:  # keep the dashboard up even if the pipeline can't start
+            log.error("Could not start pipeline (%s); serving dashboard UI only.", exc)
+            pipeline = None
+    else:
+        log.info("RUN_PIPELINE=0 — serving dashboard UI only (no video processing).")
 
     host = "0.0.0.0"
     port = int(os.environ.get("PORT", config.get("dashboard.port", 5000)))
-    
     log.info("Dashboard on http://%s:%s", host, port)
+    # threaded=True so the MJPEG stream doesn't block API calls.
     app.run(host=host, port=port, threaded=True, debug=False)
 
 
