@@ -1,35 +1,44 @@
 from __future__ import annotations
 
-"""Flask dashboard + live processing.
-
-Starts the analytics pipeline in a background thread, streams the annotated frames
-as MJPEG, and serves JSON endpoints that the dashboard polls for charts and tables.
-"""
+"""Flask dashboard + live processing."""
 
 import argparse
 import logging
 import time
 import os
 import sys
+from pathlib import Path
 
-# ─── RENDER PLATFORM PATH FIX ─────────────────────────────────────────
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
+# ─── RENDER PLATFORM PATH FIX (COMPLETE INJECTION) ────────────────────
+# Yeh automatically script ke location aur uske parent directories ko add karega
+script_dir = Path(__file__).resolve().parent
+root_dir = script_dir.parent
 
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-if parent_dir not in sys.path:
-    sys.path.append(parent_dir)
+if str(script_dir) not in sys.path:
+    sys.path.insert(0, str(script_dir))
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
+# Extra insurance: Agar Render 'src' folder ko nahi dekh pa raha hai
+src_dir = script_dir / "src"
+if src_dir.exists() and str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 # ──────────────────────────────────────────────────────────────────────
 
 from flask import Flask, Response, jsonify, render_template
 
+# Har tarah ke folder layout ke liye fallback mechanisms
 try:
     from src.config import Config
     from src.pipeline import Pipeline
-except ModuleNotFoundError:
-    from config import Config
-    from pipeline import Pipeline
+except (ModuleNotFoundError, ImportError):
+    try:
+        from config import Config
+        from pipeline import Pipeline
+    except (ModuleNotFoundError, ImportError):
+        # Agar absolute fail ho jaye toh system path standard import try karein
+        import config as Config  # type: ignore
+        import pipeline as Pipeline  # type: ignore
 
 app = Flask(
     __name__,
