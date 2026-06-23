@@ -3,6 +3,7 @@
 Starts the analytics pipeline in a background thread, streams the annotated frames
 as MJPEG, and serves JSON endpoints that the dashboard polls for charts and tables.
 """
+"""Flask dashboard + live processing."""
 from __future__ import annotations
 
 import argparse
@@ -11,14 +12,26 @@ import time
 import os
 import sys
 
-# IMPORTANT FIX: Python ko 'src' folder ka rasta batane ke liye path injection
+# ─── RENDER PLATFORM PATH FIX ─────────────────────────────────────────
+# Yeh current working directory aur uske upar ke folder dono ko path me jod dega
 current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+
 if current_dir not in sys.path:
     sys.path.append(current_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+# ──────────────────────────────────────────────────────────────────────
 
 from flask import Flask, Response, jsonify, render_template
-from src.config import Config
-from src.pipeline import Pipeline
+
+# Agar abhi bhi "src" na mile, toh hum directly fallback imports use kar sakte hain
+try:
+    from src.config import Config
+    from src.pipeline import Pipeline
+except ModuleNotFoundError:
+    from config import Config
+    from pipeline import Pipeline
 
 app = Flask(
     __name__,
