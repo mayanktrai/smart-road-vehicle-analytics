@@ -12,33 +12,46 @@ import os
 import sys
 import time
 
-# ─── THE ULTIMATE RENDER PATH FIX ─────────────────────────────────────
-# Hum current running file (app.py) ki directory nikaal rahe hain
-_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# ─── THE ULTIMATE BRUTE-FORCE PATH SCANNER ────────────────────────────
+# Hum manually scan karke search paths register karenge taaki zero configuration defaults milein
+_HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Agar hum Render par hain, toh hum is directory ko sys.path me sabse top (index 0) par daalenge
-if _CURRENT_DIR not in sys.path:
-    sys.path.insert(0, _CURRENT_DIR)
+# 1. Base files location system path me add karein
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
-# Agar server '/opt/render/project/src' ke andar chal raha hai, toh 'src' ke andar ki files
-# direct bina root folder prefix ke import ho sakein, iske liye fallback strategy lagayi hai.
+# 2. Agar Render ne folders nested kar diye hain, toh check karein ki 'src' folder kahan chhupa hai
+_SRC_PATH_DIRECT = os.path.join(_HERE, "src")
+_SRC_PATH_PARENT = os.path.join(os.path.dirname(_HERE), "src")
+
+if os.path.exists(_SRC_PATH_DIRECT) and _SRC_PATH_DIRECT not in sys.path:
+    sys.path.insert(0, _SRC_PATH_DIRECT)
+if os.path.exists(_SRC_PATH_PARENT) and _SRC_PATH_PARENT not in sys.path:
+    sys.path.insert(0, _SRC_PATH_PARENT)
+
+# 3. Agar fir bhi fallback layer me custom module execution handle karna pade
+sys.path.insert(0, os.path.dirname(_HERE))
 # ──────────────────────────────────────────────────────────────────────
 
 from flask import Flask, Response, jsonify, render_template
 
-# Yahan hum dynamically try karenge dono tarike se import karna
+# Ab dynamic framework wrapper module loading chalegi bina crash huye
 try:
     from src.config import Config
     from src.pipeline import Pipeline
 except (ModuleNotFoundError, ImportError):
-    # Render cloud ke liye fallback jab 'src' folder khud hi root directory ban jaye
     try:
         import config as Config  # type: ignore
         import pipeline as Pipeline  # type: ignore
     except (ModuleNotFoundError, ImportError):
-        # Ek aur aakhri backup
-        from config import Config # type: ignore
-        from pipeline import Pipeline # type: ignore
+        try:
+            from config import Config  # type: ignore
+            from pipeline import Pipeline  # type: ignore
+        except (ModuleNotFoundError, ImportError) as err:
+            # Taaki exact debugging directory output dikhe agar absolute failure ho
+            print(f"CRITICAL DEBUG INFO: Current sys.path is {sys.path}", flush=True)
+            print(f"CRITICAL DEBUG INFO: Current directory content is {os.listdir(_HERE)}", flush=True)
+            raise err
 
 # UI-only mode escape hatch for memory-constrained hosts.
 RUN_PIPELINE = os.environ.get("RUN_PIPELINE", "1") != "0"
@@ -147,12 +160,11 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    # Config loading block safely
+    # Config location loading block safely
     try:
         config = Config.load(args.config)
     except Exception:
-        # Agar default location par na mile toh absolute path handling
-        config_path = os.path.join(_CURRENT_DIR, args.config)
+        config_path = os.path.join(_HERE, args.config)
         config = Config.load(config_path)
 
     if RUN_PIPELINE:
