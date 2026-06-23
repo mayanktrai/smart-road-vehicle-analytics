@@ -1,7 +1,7 @@
 # Smart Road Vehicle Analytics — runtime configuration
 
 # Video input: 0 for webcam, an RTSP/RTMP URL, or a file path.
-source: "traffic.mp4"          # <-- Humnen "data/sample.mp4" se badal kar direct file ka naam kar diya
+source: "https://assets.mixkit.co/videos/preview/mixkit-traffic-in-a-highway-at-night-42352-large.mp4"
 output_path: "annotated.mp4"
 process_every_n: 2            # <-- Isko 2 kar diya taaki laptop par video phase bina lag ke smooth chale
 
